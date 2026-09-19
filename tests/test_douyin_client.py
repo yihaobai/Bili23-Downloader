@@ -29,6 +29,17 @@ class DouyinClientTests(unittest.TestCase):
         self.assertTrue(DouyinClient.is_url("https://www.iesdouyin.com/share/video/123456789012"))
         self.assertFalse(DouyinClient.is_url("https://www.bilibili.com/video/BV1xx"))
 
+    def test_extracts_url_from_copied_share_text(self):
+        share_text = (
+            "1.79 :2pm bnQ:/ 08/01 f@o.qE #郑恩地 https://v.douyin.com/SsTL1BXBURQ/ "
+            "复制此链接，打开Dou音搜索，直接观看视频！"
+        )
+
+        self.assertEqual(
+            DouyinClient.extract_share_url(share_text),
+            "https://v.douyin.com/SsTL1BXBURQ/",
+        )
+
     def test_extracts_aweme_id_from_path_and_query(self):
         self.assertEqual(
             DouyinClient.extract_aweme_id("https://www.douyin.com/video/123456789012?modal_id=1"),

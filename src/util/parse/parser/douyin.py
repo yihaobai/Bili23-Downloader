@@ -9,7 +9,7 @@ class DouyinParser(ParserBase):
     """Parse one publicly accessible Douyin video into the normal episode tree."""
 
     def parse(self, url: str, pn: int = 1, get_info_data: bool = False):
-        self.url = url
+        self.url = DouyinClient.extract_share_url(url) or url
         media = DouyinClient.fetch(url)
 
         episode_id = EpisodeData.add_episode()

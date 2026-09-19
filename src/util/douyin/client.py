@@ -11,6 +11,10 @@ _AWEME_ID_RE = re.compile(
     r"(?:/(?:video|note|share/video|share/note)/)(\d{8,})(?:[/?#]|$)",
     re.IGNORECASE,
 )
+_SHARE_URL_RE = re.compile(
+    r"https?://(?:[\w-]+\.)?(?:douyin\.com|iesdouyin\.com)/[^\s<>]+",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,22 @@ class DouyinClient:
         return host == "douyin.com" or host.endswith(".douyin.com") or host == "iesdouyin.com" or host.endswith(".iesdouyin.com")
 
     @classmethod
+    def extract_share_url(cls, value: str) -> str | None:
+        """Extract a Douyin URL from the share text copied from the app."""
+        if not value:
+            return None
+
+        candidate = value.strip()
+        match = _SHARE_URL_RE.search(candidate)
+
+        if match:
+            candidate = match.group(0)
+
+        candidate = candidate.rstrip(".,;!?，。！？、)]}>")
+
+        return candidate if cls.is_url(candidate) else None
+
+    @classmethod
     def extract_aweme_id(cls, url: str) -> str | None:
         """Extract an aweme id from a long URL or resolved share URL."""
         if not url:
@@ -80,16 +100,18 @@ class DouyinClient:
     @classmethod
     def resolve_url(cls, url: str) -> str:
         """Resolve a short share URL using the normal HTTP client."""
-        if not cls.is_url(url):
+        candidate = cls.extract_share_url(url)
+
+        if not candidate:
             raise ValueError("不是有效的抖音链接")
 
-        if cls.extract_aweme_id(url):
-            return url.strip()
+        if cls.extract_aweme_id(candidate):
+            return candidate
 
         from ..network.request import ResponseType, SyncNetWorkRequest
 
         request = SyncNetWorkRequest(
-            url.strip(),
+            candidate,
             response_type=ResponseType.REDIRECT_URL,
             extra_headers={"Referer": cls.REFERER, "User-Agent": cls.USER_AGENT},
         )
