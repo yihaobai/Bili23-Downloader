@@ -7,6 +7,7 @@ import runpy
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from util.douyin.client import DouyinClient
+from util.douyin.browser import choose_media_url
 
 url_patterns = runpy.run_path(
     str(Path(__file__).parents[1] / "src" / "util" / "common" / "data" / "url_pattern.py")
@@ -127,6 +128,25 @@ class DouyinClientTests(unittest.TestCase):
     def test_normalize_requires_a_media_url(self):
         with self.assertRaisesRegex(RuntimeError, "可下载的视频地址"):
             DouyinClient.normalize_detail("123456789012", {"video": {}})
+
+    def test_choose_media_url_prefers_cdn_video_over_page_assets(self):
+        self.assertEqual(
+            choose_media_url(
+                [
+                    "https://www.douyin.com/assets/player.js",
+                    "https://lf-douyin-pc-web.douyinstatic.com/obj/uuu_265.mp4",
+                    "https://v9-v2-mps-cdn.douyinvod.com/video/main.mp4?mime_type=video_mp4",
+                    "https://www.douyin.com/api/iteminfo",
+                ]
+            ),
+            "https://v9-v2-mps-cdn.douyinvod.com/video/main.mp4?mime_type=video_mp4",
+        )
+
+        self.assertEqual(choose_media_url(["https://www.douyin.com/api/iteminfo"]), "")
+        self.assertEqual(
+            choose_media_url(["https://www.douyin.com/aweme/v1/play/?video_id=123"]),
+            "https://www.douyin.com/aweme/v1/play/?video_id=123",
+        )
 
 
 if __name__ == "__main__":

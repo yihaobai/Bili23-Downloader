@@ -13,6 +13,21 @@ from .capture import DouyinCapture
 from .client import DouyinClient
 
 
+def choose_media_url(candidates):
+    """Choose a playback request, never a page asset or unrelated API."""
+    for url in candidates:
+        if not isinstance(url, str) or not url.startswith("https://"):
+            continue
+
+        lowered = url.lower()
+        if "douyinvod.com/" in lowered:
+            return url
+        if "douyin.com/aweme/v1/play/" in lowered:
+            return url
+
+    return ""
+
+
 def create_resolver(parent=None):
     """Create a GUI-owned resolver without importing Qt in headless tests."""
     from PySide6.QtCore import QObject, QEventLoop, QTimer, QThread, QUrl, Qt, Signal
@@ -67,19 +82,21 @@ def create_resolver(parent=None):
         def __init__(self, parent=None):
             super().__init__(parent)
             self.media_urls = []
+            self.request_urls = []
 
         def clear(self):
             self.media_urls.clear()
+            self.request_urls.clear()
 
         def interceptRequest(self, info):
             url = info.requestUrl().toString()
             resource_type = info.resourceType()
             media_type = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMedia
 
-            if resource_type == media_type or (
-                resource_type == QWebEngineUrlRequestInfo.ResourceType.ResourceTypeXhr
-                and any(token in url.lower() for token in ("play", "video", "mp4", "byte", "snssdk", "douyin"))
-            ):
+            if url.startswith(("http://", "https://")) and url not in self.request_urls:
+                self.request_urls.append(url)
+
+            if resource_type == media_type:
                 if url and url not in self.media_urls:
                     self.media_urls.append(url)
 
@@ -192,8 +209,10 @@ def create_resolver(parent=None):
                 if not isinstance(snapshot, dict):
                     return
 
-                if self.interceptor.media_urls:
-                    snapshot["media_url"] = self.interceptor.media_urls[0]
+                captured_urls = [*self.interceptor.media_urls, *self.interceptor.request_urls]
+                selected_url = choose_media_url(captured_urls)
+                if selected_url:
+                    snapshot["media_url"] = selected_url
 
                 responses = snapshot.get("responses") or []
 
@@ -210,7 +229,7 @@ def create_resolver(parent=None):
                 except RuntimeError:
                     pass
 
-                media_url = snapshot.get("media_url") or ""
+                media_url = choose_media_url([snapshot.get("media_url") or ""])
                 if media_url:
                     finish(
                         DouyinClient.normalize_browser_result(
@@ -228,7 +247,24 @@ def create_resolver(parent=None):
                 inspect_page()
 
             page.loadFinished.connect(on_loaded)
-            poller.timeout.connect(inspect_page)
+            def poll_page():
+                media_url = choose_media_url(self.interceptor.media_urls)
+                if media_url:
+                    finish(
+                        DouyinClient.normalize_browser_result(
+                            aweme_id,
+                            {
+                                "media_url": media_url,
+                                "title": page.title().removesuffix(" - 抖音"),
+                            },
+                            page_url=page.url().toString() or page_url,
+                        )
+                    )
+                    return
+
+                inspect_page()
+
+            poller.timeout.connect(poll_page)
             poller.start(500)
             timeout.timeout.connect(lambda: finish(error=RuntimeError("浏览器页面未返回抖音媒体地址")))
             timeout.setSingleShot(True)
