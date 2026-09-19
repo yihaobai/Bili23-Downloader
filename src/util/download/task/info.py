@@ -87,6 +87,14 @@ class EpisodeInfo(InfoBase):
     tags: list[str] = field(default_factory = list)
     new_ep_status: bool = False
 
+    # 跨平台媒体来源。旧任务缺少这些字段时仍按 B 站任务处理。
+    platform: str = "bilibili"
+    douyin_aweme_id: str = ""
+    media_url: str = ""
+    media_headers: dict = field(default_factory = dict)
+    media_width: int = 0
+    media_height: int = 0
+
     # 收藏夹\个人空间
     favorites_name: str = ""
     favorites_id: int = 0
