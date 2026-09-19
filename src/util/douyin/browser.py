@@ -16,7 +16,7 @@ from .client import DouyinClient
 def create_resolver(parent=None):
     """Create a GUI-owned resolver without importing Qt in headless tests."""
     from PySide6.QtCore import QObject, QEventLoop, QTimer, QThread, QUrl, Qt, Signal
-    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript
+    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings
 
     capture_script = r"""
 (() => {
@@ -63,6 +63,10 @@ def create_resolver(parent=None):
             super().__init__(parent)
             self.profile = QWebEngineProfile(self)
             self.profile.setHttpUserAgent(DouyinClient.USER_AGENT)
+            self.profile.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture,
+                False,
+            )
             self.page_script = QWebEngineScript()
             self.page_script.setSourceCode(capture_script)
             self.page_script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
@@ -128,6 +132,7 @@ def create_resolver(parent=None):
                 script = r"""
 (() => {
     const video = document.querySelector("video");
+    if (video && video.paused) video.play().catch(() => {});
     const resources = performance.getEntriesByType("resource")
         .map((entry) => entry.name)
         .filter((url) => /^https?:/i.test(url) && /(play|video|mp4|bytecdn|douyin)/i.test(url))
@@ -205,4 +210,3 @@ def create_resolver(parent=None):
         instance.setParent(parent)
 
     return instance
-
