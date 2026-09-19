@@ -1,6 +1,7 @@
 from ...common.enum import ParserType
 from ...douyin.client import DouyinClient
 
+from ..episode.base import EpisodeParserBase
 from ..episode.tree import Attribute, EpisodeData, TreeItem
 from .base import ParserBase
 
@@ -54,7 +55,9 @@ class DouyinParser(ParserBase):
         if get_info_data:
             return self.info_data
 
-        self.update_episode_list(root, ("cid", 0))
+        episode_parser = EpisodeParserBase()
+        episode_parser.category_name = self.get_category_name()
+        episode_parser.update_episode_list(root, ("episode_id", episode_id))
 
     def get_parser_type(self):
         # Reuse the existing user-upload category and naming rules.
