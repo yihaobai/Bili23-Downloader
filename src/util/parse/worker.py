@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 class WorkerBase:
     def get_parser(self, parser_type: str):
         match parser_type:
+            case "douyin":
+                from .parser.douyin import DouyinParser
+                return DouyinParser()
+
             case "video":
                 from .parser.video import VideoParser
                 return VideoParser()

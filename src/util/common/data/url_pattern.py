@@ -2,6 +2,7 @@ import re
 
 
 url_patterns = [
+    ("douyin", re.compile(r"(?:v\.)?douyin\.com/|iesdouyin\.com/", re.I)),
     ("video", re.compile(r"bilibili\.com/video/([a-zA-Z0-9]+)")),
     ("bangumi", re.compile(r"bilibili\.com/bangumi/(play|media)/(ss\d+|ep\d+|md\d+)")),
     ("cheese", re.compile(r"bilibili\.com/cheese/play/(ss\d+|ep\d+)")),
