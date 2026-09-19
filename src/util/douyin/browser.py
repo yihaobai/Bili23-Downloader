@@ -134,8 +134,13 @@ def create_resolver(parent=None):
     const video = document.querySelector("video");
     if (video && video.paused) video.play().catch(() => {});
     const resources = performance.getEntriesByType("resource")
+        .filter((entry) => {
+            if (entry.initiatorType === "video") return true;
+            if (entry.initiatorType !== "fetch" && entry.initiatorType !== "xmlhttprequest") return false;
+            return !/\.(?:js|css|png|jpe?g|svg|woff2?)(?:\?|$)/i.test(entry.name);
+        })
         .map((entry) => entry.name)
-        .filter((url) => /^https?:/i.test(url) && /(play|video|mp4|bytecdn|douyin)/i.test(url))
+        .filter((url) => /^https?:/i.test(url))
         .slice(-40);
     const candidates = [video && video.currentSrc, video && video.src, ...resources]
         .filter((url) => typeof url === "string" && /^https?:/i.test(url));
