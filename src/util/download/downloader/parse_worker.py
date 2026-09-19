@@ -180,10 +180,7 @@ class ParseWorker(QRunnable, ParserBase):
         # Refresh the short-lived media URL for every download attempt.
         self.task_info.Episode.douyin_aweme_id = media.aweme_id
         self.task_info.Episode.media_url = media.media_url
-        self.task_info.Episode.media_headers = {
-            "Referer": DouyinClient.REFERER,
-            "User-Agent": DouyinClient.USER_AGENT,
-        }
+        self.task_info.Episode.media_headers = media.media_headers or DouyinClient.media_headers()
         self.task_info.Episode.media_width = media.width
         self.task_info.Episode.media_height = media.height
 

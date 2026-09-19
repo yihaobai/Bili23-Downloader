@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import re
+
+from .capture import DouyinCapture
 
 
 _AWEME_ID_RE = re.compile(
@@ -23,6 +25,7 @@ class DouyinMedia:
     publish_time: int
     width: int
     height: int
+    media_headers: dict[str, str] = field(default_factory=dict)
 
 
 class DouyinClient:
@@ -37,6 +40,12 @@ class DouyinClient:
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
     )
     REFERER = "https://www.douyin.com/"
+    _browser_resolver = None
+
+    @classmethod
+    def set_browser_resolver(cls, resolver) -> None:
+        """Register the GUI-owned browser resolver used by worker threads."""
+        cls._browser_resolver = resolver
 
     @classmethod
     def is_url(cls, value: str) -> bool:
@@ -94,6 +103,15 @@ class DouyinClient:
         if not aweme_id:
             raise ValueError("无法从抖音链接中识别视频 ID")
 
+        if cls._browser_resolver is not None:
+            return cls._browser_resolver.fetch(resolved_url, aweme_id)
+
+        return cls._fetch_http(aweme_id)
+
+    @classmethod
+    def _fetch_http(cls, aweme_id: str) -> DouyinMedia:
+        """Legacy fallback for environments without the optional browser layer."""
+
         from ..network.request import SyncNetWorkRequest
 
         endpoint = "https://www.douyin.com/aweme/v1/web/aweme/detail/"
@@ -112,7 +130,64 @@ class DouyinClient:
         return cls.normalize_detail(aweme_id, detail)
 
     @classmethod
-    def normalize_detail(cls, aweme_id: str, detail: dict) -> DouyinMedia:
+    def normalize_captured_detail(
+        cls,
+        aweme_id: str,
+        responses: list,
+        page_url: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> DouyinMedia:
+        detail = DouyinCapture.find_detail(responses, aweme_id)
+
+        return cls.normalize_detail(
+            aweme_id,
+            detail,
+            headers=headers or cls.media_headers(page_url),
+        )
+
+    @classmethod
+    def normalize_browser_result(
+        cls,
+        aweme_id: str,
+        result: dict,
+        page_url: str = "",
+    ) -> DouyinMedia:
+        """Normalize a browser result when only the media element is available."""
+        media_url = cls._remove_watermark(result.get("media_url", ""))
+
+        if not media_url:
+            raise RuntimeError("浏览器页面未找到可下载的抖音视频地址")
+
+        title = (result.get("title") or "抖音视频").strip() or "抖音视频"
+
+        return DouyinMedia(
+            aweme_id=aweme_id,
+            title=title,
+            author=result.get("author", ""),
+            author_id=int(result.get("author_id") or 0),
+            cover_url=result.get("cover_url", ""),
+            media_url=media_url,
+            duration=max(int(result.get("duration") or 0), 0),
+            publish_time=int(result.get("publish_time") or 0),
+            width=int(result.get("width") or 0),
+            height=int(result.get("height") or 0),
+            media_headers=result.get("headers") or cls.media_headers(page_url),
+        )
+
+    @classmethod
+    def media_headers(cls, page_url: str = "") -> dict[str, str]:
+        return {
+            "Referer": page_url or cls.REFERER,
+            "User-Agent": cls.USER_AGENT,
+        }
+
+    @classmethod
+    def normalize_detail(
+        cls,
+        aweme_id: str,
+        detail: dict,
+        headers: dict[str, str] | None = None,
+    ) -> DouyinMedia:
         video = detail.get("video") or {}
         media_url = cls._get_no_watermark_url(video)
         if not media_url:
@@ -133,6 +208,7 @@ class DouyinClient:
             publish_time=create_time,
             width=int(video.get("width") or 0),
             height=int(video.get("height") or 0),
+            media_headers=headers or cls.media_headers(),
         )
 
     @staticmethod
@@ -155,10 +231,10 @@ class DouyinClient:
 
     @classmethod
     def _get_no_watermark_url(cls, video: dict) -> str:
-        # Prefer the public download address. Older responses only expose a
-        # playwm URL, whose public no-watermark form uses /play/.
+        # play_addr is the browser playback address and is normally the
+        # no-watermark variant. download_addr is kept only as a fallback.
         candidates = []
-        for key in ("download_addr", "play_addr", "play_addr_h264"):
+        for key in ("play_addr", "play_addr_h264", "download_addr"):
             candidates.extend((video.get(key) or {}).get("url_list") or [])
 
         for candidate in candidates:

@@ -65,6 +65,54 @@ class DouyinClientTests(unittest.TestCase):
         self.assertEqual(media.duration, 12)
         self.assertEqual(media.media_url, "https://example.com/play/video.mp4?foo=bar")
 
+    def test_prefers_play_addr_over_download_addr(self):
+        detail = {
+            "desc": "浏览器播放地址",
+            "aweme_id": "123456789012",
+            "video": {
+                "play_addr": {
+                    "url_list": ["https://example.com/play/video-without-watermark.mp4"]
+                },
+                "download_addr": {
+                    "url_list": ["https://example.com/playwm/video-with-watermark.mp4"]
+                },
+            },
+        }
+
+        media = DouyinClient.normalize_captured_detail(
+            "123456789012",
+            [{"data": {"aweme_detail": detail}}],
+            page_url="https://www.douyin.com/video/123456789012",
+        )
+
+        self.assertEqual(media.media_url, "https://example.com/play/video-without-watermark.mp4")
+        self.assertEqual(media.media_headers["Referer"], "https://www.douyin.com/video/123456789012")
+
+    def test_normalizes_nested_browser_response_body(self):
+        body = {
+            "payload": {
+                "data": {
+                    "aweme_detail": {
+                        "aweme_id": "123456789012",
+                        "desc": "嵌套响应",
+                        "video": {
+                            "play_addr": {
+                                "url_list": ["https://example.com/play/nested.mp4"]
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
+        media = DouyinClient.normalize_captured_detail(
+            "123456789012",
+            [{"body": __import__("json").dumps(body)}],
+        )
+
+        self.assertEqual(media.title, "嵌套响应")
+        self.assertEqual(media.media_url, "https://example.com/play/nested.mp4")
+
     def test_normalize_requires_a_media_url(self):
         with self.assertRaisesRegex(RuntimeError, "可下载的视频地址"):
             DouyinClient.normalize_detail("123456789012", {"video": {}})

@@ -463,6 +463,19 @@ class ParseInterface(ParseBase):
     def init_utils(self):
         self.previewer = Previewer()
 
+        # The resolver owns an off-the-record QtWebEngine profile. It is only
+        # used to observe public page responses; media bytes still use the
+        # existing downloader and no Douyin account data is persisted.
+        try:
+            from util.douyin.browser import create_resolver
+            from util.douyin.client import DouyinClient
+
+            DouyinClient.set_browser_resolver(create_resolver(self))
+
+        except ImportError:
+            # Keep the HTTP fallback available for builds without Qt WebEngine.
+            logger.info("Qt WebEngine unavailable; using the Douyin HTTP fallback")
+
         self.clipboard = QApplication.clipboard()
         self.clipboard.changed.connect(self.on_copy_url)
 

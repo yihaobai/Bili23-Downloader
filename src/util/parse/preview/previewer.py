@@ -220,10 +220,7 @@ class Previewer(ParserBase, QObject):
             "accept_quality": [80],
             "durl": [{"url": media.media_url, "length": duration, "size": 0}],
             "timelength": duration,
-            "headers": {
-                "Referer": DouyinClient.REFERER,
-                "User-Agent": DouyinClient.USER_AGENT,
-            },
+            "headers": media.media_headers or DouyinClient.media_headers(),
             "query_url": f"douyin://{media.aweme_id}",
         }
         PreviewerInfo.media_type = MediaType.MP4

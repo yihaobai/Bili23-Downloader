@@ -18,10 +18,7 @@ class DouyinParser(ParserBase):
                 "platform": "douyin",
                 "douyin_aweme_id": media.aweme_id,
                 "media_url": media.media_url,
-                "media_headers": {
-                    "Referer": DouyinClient.REFERER,
-                    "User-Agent": DouyinClient.USER_AGENT,
-                },
+                "media_headers": media.media_headers or DouyinClient.media_headers(),
                 "media_width": media.width,
                 "media_height": media.height,
             }
