@@ -354,7 +354,7 @@ class ParseInterface(ParseBase):
         paste_action.triggered.connect(lambda _: self.on_paste_and_parse())
 
         self.url_box = LineEdit(self)
-        self.url_box.setPlaceholderText(self.tr("Link / av / BV / ep / ss / md / Favorites / Profile"))
+        self.url_box.setPlaceholderText(self.tr("Link / av / BV / Douyin share link / ep / ss / md / Favorites / Profile"))
         self.url_box.addAction(paste_action, LineEdit.ActionPosition.TrailingPosition)
 
         self.url_box.setClearButtonEnabled(True)
