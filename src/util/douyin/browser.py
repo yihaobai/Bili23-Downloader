@@ -16,7 +16,14 @@ from .client import DouyinClient
 def create_resolver(parent=None):
     """Create a GUI-owned resolver without importing Qt in headless tests."""
     from PySide6.QtCore import QObject, QEventLoop, QTimer, QThread, QUrl, Qt, Signal
-    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings
+    from PySide6.QtWebEngineCore import (
+        QWebEnginePage,
+        QWebEngineProfile,
+        QWebEngineScript,
+        QWebEngineSettings,
+        QWebEngineUrlRequestInfo,
+        QWebEngineUrlRequestInterceptor,
+    )
 
     capture_script = r"""
 (() => {
@@ -56,6 +63,26 @@ def create_resolver(parent=None):
 })();
 """
 
+    class MediaRequestInterceptor(QWebEngineUrlRequestInterceptor):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.media_urls = []
+
+        def clear(self):
+            self.media_urls.clear()
+
+        def interceptRequest(self, info):
+            url = info.requestUrl().toString()
+            resource_type = info.resourceType()
+            media_type = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMedia
+
+            if resource_type == media_type or (
+                resource_type == QWebEngineUrlRequestInfo.ResourceType.ResourceTypeXhr
+                and any(token in url.lower() for token in ("play", "video", "mp4", "byte", "snssdk", "douyin"))
+            ):
+                if url and url not in self.media_urls:
+                    self.media_urls.append(url)
+
     class Resolver(QObject):
         request = Signal(str, object)
 
@@ -67,6 +94,8 @@ def create_resolver(parent=None):
                 QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture,
                 False,
             )
+            self.interceptor = MediaRequestInterceptor(self)
+            self.profile.setUrlRequestInterceptor(self.interceptor)
             self.page_script = QWebEngineScript()
             self.page_script.setSourceCode(capture_script)
             self.page_script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
@@ -104,6 +133,7 @@ def create_resolver(parent=None):
                 done.set()
 
         def _resolve(self, page_url: str, aweme_id: str):
+            self.interceptor.clear()
             page = QWebEnginePage(self.profile, self)
             loop = QEventLoop()
             poller = QTimer(page)
@@ -161,6 +191,9 @@ def create_resolver(parent=None):
             def handle_snapshot(snapshot):
                 if not isinstance(snapshot, dict):
                     return
+
+                if self.interceptor.media_urls:
+                    snapshot["media_url"] = self.interceptor.media_urls[0]
 
                 responses = snapshot.get("responses") or []
 
