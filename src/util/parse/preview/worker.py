@@ -49,6 +49,10 @@ class QueryInfoWorker(QObject):
         self.get_dash_file_size(download_urls)
 
     def query_mp4_file_size(self):
+        if PreviewerInfo.info_data.get("parser_type") == "douyin":
+            self.query_douyin_file_size()
+            return
+
         query_url = self.get_query_url(self.media_info["id"])
 
         self.get_mp4_file_size(query_url)
@@ -58,6 +62,16 @@ class QueryInfoWorker(QObject):
         self.file_size = result["file_size"]
 
         return self.file_size
+
+    def query_douyin_file_size(self):
+        result = resolve_download_url(
+            self.get_download_urls(self.media_info),
+            min_file_size = 1024,
+            headers = PreviewerInfo.info_data.get("headers"),
+            use_cdn = False,
+        )
+        self.file_size = result["file_size"]
+        self.media_info["size"] = self.file_size
 
     def get_mp4_file_size(self, query_url: str):
         request = SyncNetWorkRequest(query_url)
@@ -69,6 +83,13 @@ class QueryInfoWorker(QObject):
 
     def get_download_urls(self, media_info: dict):
         download_urls = []
+
+        if PreviewerInfo.info_data.get("parser_type") == "douyin":
+            for entry in media_info.get("url_entry_list", []):
+                if isinstance(entry, dict) and entry.get("url"):
+                    download_urls.append(entry["url"])
+
+            return download_urls
 
         for key in ["baseUrl", "base_url", "backupUrl", "backup_url", "url", "backup_url"]:
             object = media_info.get(key)

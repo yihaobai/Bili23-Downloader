@@ -1,14 +1,28 @@
 import sys
 import unittest
 from pathlib import Path
+import runpy
 
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from util.douyin.client import DouyinClient
 
+url_patterns = runpy.run_path(
+    str(Path(__file__).parents[1] / "src" / "util" / "common" / "data" / "url_pattern.py")
+)["url_patterns"]
+
 
 class DouyinClientTests(unittest.TestCase):
+    def test_url_pattern_routes_douyin_before_bilibili_patterns(self):
+        parser_type = next(
+            parser_type
+            for parser_type, pattern in url_patterns
+            if pattern.search("https://www.douyin.com/video/123456789012")
+        )
+
+        self.assertEqual(parser_type, "douyin")
+
     def test_recognizes_long_and_short_douyin_hosts(self):
         self.assertTrue(DouyinClient.is_url("https://www.douyin.com/video/123456789012"))
         self.assertTrue(DouyinClient.is_url("https://v.douyin.com/abc123/"))

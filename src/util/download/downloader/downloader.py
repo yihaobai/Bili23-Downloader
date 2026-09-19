@@ -948,6 +948,7 @@ class Downloader(QObject):
             "Referer": self.task_info.Episode.url,
             "User-Agent": config.get(config.user_agent)
         }
+        headers.update(self.task_info.Episode.media_headers or {})
 
         self.session = httpx.Client(
             limits = limits,

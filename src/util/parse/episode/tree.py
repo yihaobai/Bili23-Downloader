@@ -309,6 +309,21 @@ class TreeItem(TreeItemBase):
                 "section_id": self.section_id
             })
 
+        # Provider-specific metadata is kept in EpisodeData so the tree item
+        # remains compatible with existing Bilibili fields. Expose it only for
+        # the episode that owns the metadata (preview and task creation need it).
+        provider_data = EpisodeData.get_episode_data(self.episode_id)
+        for key in (
+            "platform",
+            "douyin_aweme_id",
+            "media_url",
+            "media_headers",
+            "media_width",
+            "media_height",
+        ):
+            if key in provider_data:
+                data[key] = provider_data[key]
+
         return data
     
     def search_items(self, keyword: str):
@@ -336,4 +351,3 @@ class TreeItem(TreeItemBase):
             return self.viewtime
 
         return self.pubtime
-    

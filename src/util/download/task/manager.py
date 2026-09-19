@@ -109,6 +109,15 @@ class TaskManager:
         return task_info
 
     def __trim_download_type(self, task_info: TaskInfo):
+        if task_info.Episode.platform == "douyin":
+            # MVP: Douyin returns a self-contained MP4. Do not expose Bilibili
+            # audio, danmaku, subtitle, cover or merge options for this task.
+            task_info.Download.type = DownloadType.VIDEO
+            task_info.Download.merge_video_audio = False
+            task_info.Download.keep_original_files = False
+
+            return
+
         if task_info.Episode.attribute & Attribute.LESSON_BIT:
             # 会员购商城课程没有 aid / cid，也不返回封面
             task_info.Download.type &= ~(DownloadType.DANMAKU | DownloadType.SUBTITLE | DownloadType.CHAPTER | DownloadType.COVER)

@@ -63,13 +63,19 @@ def get_probe_client():
     return _probe_client
 
 
-def resolve_download_url(url_list: list[str], min_file_size: int = 1024) -> dict:
+def resolve_download_url(url_list: list[str], min_file_size: int = 1024, headers: dict = None, use_cdn: bool = True) -> dict:
     from concurrent.futures import ThreadPoolExecutor
 
     start = time.monotonic()
     deadline = start + PROBE_TOTAL_TIMEOUT
 
-    tier_list = [tier for tier in CDN.get_url_tiers(url_list) if tier]
+    if use_cdn:
+        tier_list = [tier for tier in CDN.get_url_tiers(url_list) if tier]
+
+    else:
+        # Provider URLs outside Bilibili must never be rewritten to a configured
+        # Bilibili CDN host.
+        tier_list = [list(dict.fromkeys(url for url in url_list if url))]
 
     if not tier_list:
         raise RuntimeError("无法获取有效的下载链接（接口未返回任何链接）")
@@ -97,7 +103,7 @@ def resolve_download_url(url_list: list[str], min_file_size: int = 1024) -> dict
             else:
                 tier_deadline = deadline
 
-            result = _probe_tier(executor, tier, min_file_size, tier_deadline, failed_hosts, stats)
+            result = _probe_tier(executor, tier, min_file_size, tier_deadline, failed_hosts, stats, headers)
 
             if result:
                 return result
@@ -120,7 +126,7 @@ def resolve_download_url(url_list: list[str], min_file_size: int = 1024) -> dict
     ))
 
 
-def _probe_tier(executor, url_list: list[str], min_file_size: int, deadline: float, failed_hosts: set, stats: dict) -> dict:
+def _probe_tier(executor, url_list: list[str], min_file_size: int, deadline: float, failed_hosts: set, stats: dict, headers: dict = None) -> dict:
     index = 0
     count = len(url_list)
 
@@ -142,7 +148,7 @@ def _probe_tier(executor, url_list: list[str], min_file_size: int, deadline: flo
         if not batch:
             continue
 
-        result = _probe_batch(executor, batch, min_file_size, deadline, failed_hosts, stats)
+        result = _probe_batch(executor, batch, min_file_size, deadline, failed_hosts, stats, headers)
 
         if result:
             return result
@@ -150,10 +156,10 @@ def _probe_tier(executor, url_list: list[str], min_file_size: int, deadline: flo
     return None
 
 
-def _probe_batch(executor, batch: list[str], min_file_size: int, deadline: float, failed_hosts: set, stats: dict) -> dict:
+def _probe_batch(executor, batch: list[str], min_file_size: int, deadline: float, failed_hosts: set, stats: dict, headers: dict = None) -> dict:
     from concurrent.futures import wait, FIRST_COMPLETED
 
-    future_map = {executor.submit(_probe_url, url, min_file_size): url for url in batch}
+    future_map = {executor.submit(_probe_url, url, min_file_size, headers): url for url in batch}
     pending = set(future_map)
 
     try:
@@ -205,13 +211,13 @@ def _probe_batch(executor, batch: list[str], min_file_size: int, deadline: float
             future.cancel()
 
 
-def _probe_url(url: str, min_file_size: int) -> tuple[int, str]:
+def _probe_url(url: str, min_file_size: int, headers: dict = None) -> tuple[int, str]:
     # 这里不再对同一个候选做重试：候选之间本就是等价的，与其反复请求同一个节点，
     # 不如把预算花在下一个节点上。真正的瞬时故障由任务级重试兜底，见 ParseWorker
     import httpx
 
     try:
-        file_size = _probe_with_head(url, min_file_size)
+        file_size = _probe_with_head(url, min_file_size, headers)
 
         if file_size > min_file_size:
             return file_size, ""
@@ -229,11 +235,11 @@ def _probe_url(url: str, min_file_size: int) -> tuple[int, str]:
         return 0, type(e).__name__
 
 
-def _probe_with_head(url: str, min_file_size: int) -> int:
-    response = get_probe_client().head(url, headers = _get_probe_headers())
+def _probe_with_head(url: str, min_file_size: int, headers: dict = None) -> int:
+    response = get_probe_client().head(url, headers = _get_probe_headers(headers))
 
     if response.status_code == 405:
-        return _probe_with_range_get(url)
+        return _probe_with_range_get(url, headers)
 
     response.raise_for_status()
     file_size = _extract_file_size(response.headers)
@@ -241,24 +247,29 @@ def _probe_with_head(url: str, min_file_size: int) -> int:
     if file_size > min_file_size:
         return file_size
 
-    return _probe_with_range_get(url)
+    return _probe_with_range_get(url, headers)
 
 
-def _probe_with_range_get(url: str) -> int:
-    headers = _get_probe_headers()
-    headers["Range"] = "bytes=0-0"
+def _probe_with_range_get(url: str, headers: dict = None) -> int:
+    request_headers = _get_probe_headers(headers)
+    request_headers["Range"] = "bytes=0-0"
 
-    with get_probe_client().stream("GET", url, headers = headers) as response:
+    with get_probe_client().stream("GET", url, headers = request_headers) as response:
         response.raise_for_status()
 
         return _extract_file_size(response.headers)
 
 
-def _get_probe_headers() -> dict:
-    return {
+def _get_probe_headers(headers: dict = None) -> dict:
+    request_headers = {
         "Referer": "https://www.bilibili.com/",
         "User-Agent": config.get(config.user_agent)
     }
+
+    if headers:
+        request_headers.update(headers)
+
+    return request_headers
 
 
 def _extract_file_size(headers) -> int:

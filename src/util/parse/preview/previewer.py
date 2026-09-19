@@ -11,6 +11,7 @@ from ...thread.async_ import AsyncTask
 from ..parser.base import ParserBase
 from ..parser.lesson import LESSON_PLAY_DETAIL_URL, build_lesson_media_info, build_lesson_play_payload
 from ..episode.tree import Attribute
+from ...douyin.client import DouyinClient, DouyinMedia
 
 from .audio_info import AudioInfoParser
 from .info import PreviewerInfo
@@ -23,12 +24,35 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+class DouyinMediaWorker(QObject):
+    success = Signal(object)
+    error = Signal(str)
+    finished = Signal()
+
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+
+    @Slot()
+    def run(self):
+        try:
+            self.success.emit(DouyinClient.fetch(self.url))
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+        finally:
+            self.finished.emit()
+
+
 class Previewer(ParserBase, QObject):
     # 媒体信息请求跑在子线程里，而 PreviewerInfo 是全局状态，下载选项对话框会直接读它。
     # 连到闭包的回调会就地在子线程改写这些状态，因此子线程只负责把结果原样转发给这两个信号，
     # 由 Qt 排队回 GUI 线程后再落盘到 PreviewerInfo
     _media_info_ready = Signal(object, str, str, int)
     _media_info_failed = Signal(str, int)
+    _douyin_media_ready = Signal(object, int)
+    _douyin_media_failed = Signal(str, int)
 
     def __init__(self):
         ParserBase.__init__(self)
@@ -42,6 +66,8 @@ class Previewer(ParserBase, QObject):
 
         self._media_info_ready.connect(self._on_media_info_ready)
         self._media_info_failed.connect(self._on_media_info_failed)
+        self._douyin_media_ready.connect(self._on_douyin_media_ready)
+        self._douyin_media_failed.connect(self._on_douyin_media_failed)
 
         signal_bus.parse.preview_init.connect(self.on_init)
 
@@ -78,7 +104,10 @@ class Previewer(ParserBase, QObject):
             self.on_init_success()
             return
 
-        if ep_attr & Attribute.VIDEO_BIT:
+        if episode_data.get("platform") == "douyin":
+            self.get_douyin_info(episode_data, token)
+
+        elif ep_attr & Attribute.VIDEO_BIT:
             self.get_video_info(episode_data, token)
 
         elif ep_attr & Attribute.BANGUMI_BIT:
@@ -171,6 +200,41 @@ class Previewer(ParserBase, QObject):
         url = f"https://api.bilibili.com/x/player/wbi/playurl?{self.enc_wbi(params)}"
 
         self._request_media_info(url, "video", token)
+
+    def get_douyin_info(self, episode_data: dict, token: int):
+        worker = DouyinMediaWorker(episode_data.get("url", ""))
+        worker.success.connect(lambda media: self._douyin_media_ready.emit(media, token))
+        worker.error.connect(lambda error: self._douyin_media_failed.emit(error, token))
+
+        AsyncTask.run(worker)
+
+    @Slot(object, int)
+    def _on_douyin_media_ready(self, media: DouyinMedia, token: int):
+        if token != PreviewerInfo.generation:
+            return
+
+        duration = media.duration * 1000
+        PreviewerInfo.info_data = {
+            "format": "mp4",
+            "parser_type": "douyin",
+            "accept_quality": [80],
+            "durl": [{"url": media.media_url, "length": duration, "size": 0}],
+            "timelength": duration,
+            "headers": {
+                "Referer": DouyinClient.REFERER,
+                "User-Agent": DouyinClient.USER_AGENT,
+            },
+            "query_url": f"douyin://{media.aweme_id}",
+        }
+        PreviewerInfo.media_type = MediaType.MP4
+        self.on_init_success()
+
+    @Slot(str, int)
+    def _on_douyin_media_failed(self, error: str, token: int):
+        if token != PreviewerInfo.generation:
+            return
+
+        self.on_init_error(error, allow_fallback = False)
 
     def get_bangumi_info(self, episode_data: dict, token: int):
         params = {

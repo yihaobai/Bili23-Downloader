@@ -89,6 +89,10 @@ class AudioInfoParser(QObject):
     def parse_info(self):
         self.audio_quality_info_map = defaultdict(dict)
 
+        if PreviewerInfo.info_data.get("parser_type") == "douyin":
+            PreviewerInfo.audio_quality_choice_data = {}
+            return
+
         initial_data = {
             "auto": 30300
         }

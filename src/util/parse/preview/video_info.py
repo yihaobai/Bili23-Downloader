@@ -41,6 +41,20 @@ class VideoInfoParser(QObject):
         accept_quality_list = PreviewerInfo.info_data["accept_quality"].copy()
         
         for quality_id in accept_quality_list.copy():
+            if PreviewerInfo.info_data.get("parser_type") == "douyin":
+                durl = PreviewerInfo.info_data.get("durl", [])
+                self.video_info_map[quality_id][7] = {
+                    "id": quality_id,
+                    "url_entry_list": durl,
+                    "codecid": 7,
+                    "frame_rate": 0,
+                    "bandwidth": 0,
+                    "timelength": PreviewerInfo.info_data.get("timelength", 0),
+                    "size": durl[0].get("size", 0) if durl else 0,
+                }
+
+                continue
+
             self.video_info_map[quality_id][7] = {
                 "id": quality_id,
                 "codecid": 7,

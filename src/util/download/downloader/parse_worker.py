@@ -1,9 +1,11 @@
 from PySide6.QtCore import QRunnable, QMetaObject, Qt, Q_ARG
 
 from ...network.request import SyncNetWorkRequest, RequestType
+from ...network.download_url import resolve_download_url
 from ...parse.episode.tree import Attribute
 from ...parse.parser.base import ParserBase
 from ...parse.parser.lesson import LESSON_PLAY_DETAIL_URL, build_lesson_media_info, build_lesson_play_payload
+from ...douyin.client import DouyinClient
 
 from ...common.enum import DownloadType, MediaType
 from ...common.translator import Translator
@@ -136,7 +138,10 @@ class ParseWorker(QRunnable, ParserBase):
     def get_info(self):
         attr = self.task_info.Episode.attribute
 
-        if attr & Attribute.VIDEO_BIT:
+        if self.task_info.Episode.platform == "douyin":
+            self.get_douyin_info()
+
+        elif attr & Attribute.VIDEO_BIT:
             self.get_video_info()
 
         elif attr & Attribute.BANGUMI_BIT:
@@ -162,6 +167,31 @@ class ParseWorker(QRunnable, ParserBase):
 
         elif (self.info_data.get("format") or "").startswith("m4a"):
             self.task_info.Download.media_type = MediaType.M4A
+
+    def get_douyin_info(self):
+        aweme_id = self.task_info.Episode.douyin_aweme_id
+        source_url = (
+            f"https://www.douyin.com/video/{aweme_id}"
+            if aweme_id
+            else self.task_info.Episode.url
+        )
+        media = DouyinClient.fetch(source_url)
+
+        # Refresh the short-lived media URL for every download attempt.
+        self.task_info.Episode.douyin_aweme_id = media.aweme_id
+        self.task_info.Episode.media_url = media.media_url
+        self.task_info.Episode.media_headers = {
+            "Referer": DouyinClient.REFERER,
+            "User-Agent": DouyinClient.USER_AGENT,
+        }
+        self.task_info.Episode.media_width = media.width
+        self.task_info.Episode.media_height = media.height
+
+        self.info_data = {
+            "format": "mp4",
+            "parser_type": "douyin",
+            "timelength": media.duration * 1000,
+        }
 
     def get_video_info(self):
         params = {
@@ -255,6 +285,9 @@ class ParseWorker(QRunnable, ParserBase):
         self.info_data = response.copy()["data"]
 
     def parse_download_info(self):
+        if self.task_info.Episode.platform == "douyin":
+            return self.parse_douyin_download_info()
+
         total_size = 0
         download_list = {}
 
@@ -284,6 +317,52 @@ class ParseWorker(QRunnable, ParserBase):
             "total_size": total_size,
             "download_queue": list(download_list.keys()),
             "download_list": download_list
+        }
+
+    def parse_douyin_download_info(self):
+        media_url = self.task_info.Episode.media_url
+        if not media_url:
+            raise ParseAbortError("无法获取抖音视频地址")
+
+        headers = self.task_info.Episode.media_headers or {
+            "Referer": DouyinClient.REFERER,
+            "User-Agent": DouyinClient.USER_AGENT,
+        }
+        result = resolve_download_url(
+            [media_url],
+            min_file_size=1024,
+            headers=headers,
+            use_cdn=False,
+        )
+
+        file_name = f"video_{self.task_info.Basic.task_id}.mp4"
+        if file_name not in self.task_info.File.relative_files:
+            self.task_info.File.relative_files.append(file_name)
+
+        self.task_info.File.video_file_ext = "mp4"
+        self.task_info.Download.video_parts_count = 1
+        self.task_info.Download.merge_video_audio = False
+        self.task_info.Download.keep_original_files = False
+
+        download_entry = {
+            **result,
+            "type": "video",
+            "file_name": file_name,
+            "file_key": "video",
+        }
+
+        if self.task_info.Download.queue:
+            if "video" not in self.task_info.Download.queue:
+                return {
+                    "total_size": 0,
+                    "download_queue": [],
+                    "download_list": {},
+                }
+
+        return {
+            "total_size": result["file_size"],
+            "download_queue": ["video"],
+            "download_list": {"video": download_entry},
         }
 
     def on_parse_error(self, error_message: str):
