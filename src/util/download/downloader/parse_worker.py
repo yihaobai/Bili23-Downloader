@@ -337,7 +337,9 @@ class ParseWorker(QRunnable, ParserBase):
             self.task_info.File.relative_files.append(file_name)
 
         self.task_info.File.video_file_ext = "mp4"
-        self.task_info.Download.video_parts_count = 1
+        # The media is downloaded as video_<task_id>.mp4, not a numbered
+        # video_<task_id>_0.mp4 segment for FFmpeg concat.
+        self.task_info.Download.video_parts_count = 0
         self.task_info.Download.merge_video_audio = False
         self.task_info.Download.keep_original_files = False
 

@@ -62,7 +62,12 @@ class Merger(QObject):
             return True
 
     def start(self):
-        if self.task_info.Download.merge_video_audio:
+        if self.task_info.Episode.platform == "douyin":
+            # Old persisted tasks may still have video_parts_count == 1.
+            # Their single downloaded MP4 must be renamed, not concatenated.
+            self.rename_output_file()
+
+        elif self.task_info.Download.merge_video_audio:
             # 现代 dash 视频合并
             self.merge_video_audio()
 
